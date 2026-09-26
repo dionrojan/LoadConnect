@@ -367,6 +367,8 @@ const driversAndTrips = [
   }
 ];
 
+import { seedReviews } from './seed_reviews.js';
+
 // Seed Function
 export function seedKerala() {
   console.log('🌱 Seeding Kerala Merchants and Drivers...');
@@ -424,6 +426,7 @@ export function seedKerala() {
   });
 
   console.log(`✅ ${driversAndTrips.length} Kerala drivers and ${tripCount} active trips verified.`);
+  seedReviews();
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

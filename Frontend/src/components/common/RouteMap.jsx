@@ -14,12 +14,41 @@ import {
 } from 'lucide-react';
 import { geocode, getRoute } from '../../services/routing';
 
+// Registered local merchants in Kerala for route proximity matching
+const KERALA_MERCHANTS = [
+  {
+    name: 'Travancore Spices',
+    location: 'Kanjirappally, Kerala',
+    matchKeywords: ['kanjirappally', 'travancore'],
+    coords: [76.78975, 9.55451],
+  },
+  {
+    name: 'Vembanad Coir Exporters',
+    location: 'Alappuzha, Kerala',
+    matchKeywords: ['alappuzha', 'vembanad', 'alleppey'],
+    coords: [76.3388, 9.4981],
+  },
+  {
+    name: 'Malabar Hardware',
+    location: 'Thrissur, Kerala',
+    matchKeywords: ['thrissur', 'malabar'],
+    coords: [76.2144, 10.5276],
+  },
+  {
+    name: 'Highrange Cardamom Hub',
+    location: 'Adimali, Kerala',
+    matchKeywords: ['adimali', 'highrange', 'munnar'],
+    coords: [76.9535, 10.0150],
+  },
+];
+
 export default function RouteMap({
   origin = 'Dallas, TX',
   destination = 'Chicago, IL',
   status = 'picked_up', // requested, accepted, picked_up, delivered
   progress = 55, // 0 - 100%
   vehicleType = '53ft Semi Trailer',
+  notes = '',
   className = ''
 }) {
   const mapContainerRef = useRef(null);
@@ -30,6 +59,7 @@ export default function RouteMap({
   const [mapMode, setMapMode] = useState('map'); // 'map' | 'satellite'
   const [loading, setLoading] = useState(true);
   const [routeInfo, setRouteInfo] = useState(null);
+  const [nearbyMerchantInfo, setNearbyMerchantInfo] = useState(null);
 
   // Initialize Leaflet map instance once
   useEffect(() => {
@@ -212,7 +242,43 @@ export default function RouteMap({
           routeLayersRef.current.push(truckMarker);
         }
 
-        // 7. AUTOMATIC PERFECT ZOOM IN (Fits the entire road route with comfortable margins)
+        // 7. Check for nearby registered merchant along this corridor
+        let foundMerchant = null;
+        const searchText = `${origin} ${destination} ${notes}`.toLowerCase();
+        for (const m of KERALA_MERCHANTS) {
+          if (m.matchKeywords.some((k) => searchText.includes(k))) {
+            const isOrigin = origin.toLowerCase().includes(m.matchKeywords[0]);
+            const isDest = destination.toLowerCase().includes(m.matchKeywords[0]);
+            if (!isOrigin && !isDest) {
+              foundMerchant = m;
+              break;
+            }
+          }
+        }
+
+        if (foundMerchant) {
+          setNearbyMerchantInfo(foundMerchant);
+          const mLatLng = [foundMerchant.coords[1], foundMerchant.coords[0]];
+          const mIcon = L.divIcon({
+            className: 'custom-map-marker',
+            html: `
+              <div style="display:flex; flex-direction:column; align-items:center; transform: translate(-50%, -100%);">
+                <div style="background:#D97706; color:white; padding:4px 8px; border-radius:12px; font-size:10px; font-weight:800; white-space:nowrap; box-shadow:0 4px 14px rgba(217,119,6,0.5); border:1.5px solid white; display:flex; align-items:center; gap:4px;">
+                  <span>🏪</span>
+                  <span>Merchant: ${foundMerchant.name} (${foundMerchant.location.split(',')[0]})</span>
+                </div>
+                <div style="width:10px; height:10px; background:#D97706; border:2px solid white; border-radius:50%; margin-top:-2px;"></div>
+              </div>
+            `,
+            iconSize: [0, 0],
+          });
+          const mMarker = L.marker(mLatLng, { icon: mIcon }).addTo(map);
+          routeLayersRef.current.push(mMarker);
+        } else {
+          setNearbyMerchantInfo(null);
+        }
+
+        // 8. AUTOMATIC PERFECT ZOOM IN (Fits the entire road route with comfortable margins)
         map.fitBounds(innerRoute.getBounds(), {
           padding: [50, 50],
           maxZoom: 14,
@@ -232,7 +298,7 @@ export default function RouteMap({
     return () => {
       isCancelled = true;
     };
-  }, [origin, destination, status, progress]);
+  }, [origin, destination, status, progress, notes]);
 
   // Zoom controls
   const handleZoomIn = () => mapInstanceRef.current?.zoomIn();
@@ -285,20 +351,31 @@ export default function RouteMap({
         </button>
       </div>
 
-      {/* Top-Left: Real Highway Distance & ETA badge */}
+      {/* Top-Left: Real Highway Distance, ETA, & Merchant Proximity badge */}
       {routeInfo && (
-        <div className="absolute top-4 left-4 z-10 flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-md">
-          <div className="w-7 h-7 rounded-xl bg-forest-700 text-amber-300 flex items-center justify-center font-bold">
-            <Navigation className="w-4 h-4 rotate-45" />
+        <div className="absolute top-4 left-4 z-10 flex flex-col gap-1.5 max-w-[280px]">
+          <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-md">
+            <div className="w-7 h-7 rounded-xl bg-forest-700 text-amber-300 flex items-center justify-center font-bold shrink-0">
+              <Navigation className="w-4 h-4 rotate-45" />
+            </div>
+            <div>
+              <p className="text-xs font-extrabold text-slate-900 leading-tight">
+                {routeInfo.distanceKm} • {routeInfo.duration}
+              </p>
+              <p className="text-[10px] text-slate-500 font-medium">
+                Verified road route ({routeInfo.source})
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="text-xs font-extrabold text-slate-900 leading-tight">
-              {routeInfo.distanceKm} • {routeInfo.duration}
-            </p>
-            <p className="text-[10px] text-slate-500 font-medium">
-              Verified road route ({routeInfo.source})
-            </p>
-          </div>
+
+          {nearbyMerchantInfo && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 text-white shadow-md border border-amber-400 text-[11px] font-bold">
+              <span>🏪</span>
+              <span className="truncate">
+                Passes near: <span className="underline">{nearbyMerchantInfo.name}</span> ({nearbyMerchantInfo.location.split(',')[0]})
+              </span>
+            </div>
+          )}
         </div>
       )}
 

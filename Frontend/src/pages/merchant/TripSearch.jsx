@@ -418,7 +418,8 @@ export default function TripSearch() {
                 <RouteMap
                   origin={selectedTrip.origin}
                   destination={selectedTrip.destination}
-                  vehicleType={selectedTrip.vehicle_type || '53ft Semi Trailer'}
+                  vehicleType={selectedTrip.vehicle_type || 'Tata 407 (14ft)'}
+                  notes={selectedTrip.notes}
                   status="requested"
                   progress={15}
                 />

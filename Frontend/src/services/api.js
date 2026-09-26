@@ -58,9 +58,11 @@ class ApiClient {
     };
 
     try {
+      const signal = options.signal || (typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined);
       const response = await fetch(url, {
         method: options.method || 'GET',
         headers,
+        signal,
         body: options.body ? JSON.stringify(options.body) : undefined,
       });
 

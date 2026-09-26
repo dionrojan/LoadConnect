@@ -16,6 +16,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Users,
+  Store,
   ChevronDown,
   Check
 } from 'lucide-react';
@@ -36,6 +37,16 @@ const KERALA_DEMO_DRIVERS = [
   { name: 'Sudheer Babu', email: 'driver.sudheer@kerala.test', route: 'Kottayam ➔ Kochi', vehicle: 'Tata Ace Gold' },
   { name: 'Suresh Menon', email: 'driver.suresh@kerala.test', route: 'Kanjirappally ➔ Kottayam', vehicle: 'Tata 407 Pickup' },
   { name: 'Dave "Longhaul" Miller', email: 'demo_driver@yoki.test', route: 'Dallas ➔ Chicago', vehicle: '53ft Semi Trailer' },
+];
+
+// List of available merchants for 1-click switching
+const KERALA_DEMO_MERCHANTS = [
+  { name: 'Manoj Thomas', email: 'manoj.spices@kerala.test', business: 'Travancore Spices & Plantations', location: 'Kanjirappally, Kottayam' },
+  { name: 'Sujith Varghese', email: 'sujith.coir@kerala.test', business: 'Vembanad Coir & Marine Exporters', location: 'Alappuzha' },
+  { name: 'Faisal Rahman', email: 'faisal.hardware@kerala.test', business: 'Malabar Builders & Hardware Trade', location: 'Thrissur' },
+  { name: 'Priya Menon', email: 'priya.organics@kerala.test', business: 'Cochin Agro-Export Consortium', location: 'Kochi (Willingdon Island)' },
+  { name: 'Anish George', email: 'anish.highrange@kerala.test', business: 'Highrange Cardamom & Cocoa Hub', location: 'Adimali, Idukki' },
+  { name: 'Maria Santos', email: 'demo_merchant@yoki.test', business: 'Santos Mexican Food Imports', location: 'Houston, TX' },
 ];
 
 export default function AppLayout({
@@ -62,13 +73,18 @@ export default function AppLayout({
   };
 
   const [driverMenuOpen, setDriverMenuOpen] = useState(false);
+  const [merchantMenuOpen, setMerchantMenuOpen] = useState(false);
   const driverMenuRef = useRef(null);
+  const merchantMenuRef = useRef(null);
 
-  // Close driver menu on click outside
+  // Close menus on click outside
   useEffect(() => {
     function handleClickOutside(event) {
       if (driverMenuRef.current && !driverMenuRef.current.contains(event.target)) {
         setDriverMenuOpen(false);
+      }
+      if (merchantMenuRef.current && !merchantMenuRef.current.contains(event.target)) {
+        setMerchantMenuOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -77,6 +93,8 @@ export default function AppLayout({
 
   const handleRoleSwitch = async () => {
     setIsSwitching(true);
+    setDriverMenuOpen(false);
+    setMerchantMenuOpen(false);
     try {
       const nextRole = isDriver ? 'merchant' : 'driver';
       await switchDemo(nextRole);
@@ -97,6 +115,20 @@ export default function AppLayout({
       setMobileMenuOpen(false);
     } catch (err) {
       console.error('Failed to switch driver:', err);
+    } finally {
+      setIsSwitching(false);
+    }
+  };
+
+  const handleSelectMerchant = async (email) => {
+    setIsSwitching(true);
+    try {
+      await login(email, 'password123');
+      navigate('/merchant/search');
+      setMerchantMenuOpen(false);
+      setMobileMenuOpen(false);
+    } catch (err) {
+      console.error('Failed to switch merchant:', err);
     } finally {
       setIsSwitching(false);
     }
@@ -261,79 +293,163 @@ export default function AppLayout({
                 )}
               </button>
 
-              {/* Switch Between Different Drivers */}
-              <div className="relative mt-1" ref={driverMenuRef}>
-                <button
-                  onClick={() => setDriverMenuOpen((prev) => !prev)}
-                  disabled={isSwitching}
-                  title={isCollapsed ? 'Switch Driver (Kerala Fleet)' : undefined}
-                  className={`
-                    w-full flex items-center rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 transition group
-                    ${isCollapsed ? 'justify-center p-3' : 'justify-between px-3.5 py-2'}
-                    ${driverMenuOpen ? 'bg-white/10 text-white' : ''}
-                  `}
-                >
-                  <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'}`}>
-                    <Users className="w-4 h-4 text-amber-400 shrink-0 group-hover:scale-110 transition-transform" />
-                    {!isCollapsed && <span className="truncate">Switch Driver</span>}
-                  </div>
-                  {!isCollapsed && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-400/20 text-amber-300 font-semibold font-mono">
-                        Fleet
-                      </span>
-                      <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${driverMenuOpen ? 'rotate-180' : ''}`} />
+              {/* DRIVER MODE ONLY: Switch Between Different Drivers */}
+              {isDriver && (
+                <div className="relative mt-1" ref={driverMenuRef}>
+                  <button
+                    onClick={() => setDriverMenuOpen((prev) => !prev)}
+                    disabled={isSwitching}
+                    title={isCollapsed ? 'Switch Driver (Kerala Fleet)' : undefined}
+                    className={`
+                      w-full flex items-center rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 transition group
+                      ${isCollapsed ? 'justify-center p-3' : 'justify-between px-3.5 py-2'}
+                      ${driverMenuOpen ? 'bg-white/10 text-white' : ''}
+                    `}
+                  >
+                    <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'}`}>
+                      <Users className="w-4 h-4 text-amber-400 shrink-0 group-hover:scale-110 transition-transform" />
+                      {!isCollapsed && <span className="truncate">Switch Driver</span>}
+                    </div>
+                    {!isCollapsed && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-400/20 text-amber-300 font-semibold font-mono">
+                          Fleet
+                        </span>
+                        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${driverMenuOpen ? 'rotate-180' : ''}`} />
+                      </div>
+                    )}
+                  </button>
+
+                  {/* Dropdown Flyout Menu (Positioned ABOVE the button) */}
+                  {driverMenuOpen && (
+                    <div
+                      style={isCollapsed ? { bottom: '0px' } : { bottom: 'calc(100% + 8px)' }}
+                      className={`
+                        absolute z-50 bg-[#1B1D21] border border-white/15 rounded-2xl p-2 shadow-2xl backdrop-blur-xl w-72
+                        ${isCollapsed ? 'left-full ml-2' : 'left-0'}
+                      `}
+                    >
+                      <div className="px-2.5 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between border-b border-white/10 mb-1">
+                        <span>Select Kerala Driver</span>
+                        <span className="text-amber-400 font-mono">13 Drivers</span>
+                      </div>
+
+                      <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
+                        {KERALA_DEMO_DRIVERS.map((d) => {
+                          const isCurrent = user?.email === d.email;
+
+                          return (
+                            <button
+                              key={d.email}
+                              onClick={() => handleSelectDriver(d.email)}
+                              className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left text-xs transition ${
+                                isCurrent
+                                  ? 'bg-forest-700 text-white font-bold shadow-xs'
+                                  : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                              }`}
+                            >
+                              <div className="min-w-0 pr-2">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="truncate font-semibold">{d.name}</span>
+                                  {isCurrent && (
+                                    <span className="text-[9px] px-1 rounded bg-amber-400 text-slate-950 font-bold">Active</span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                                  📍 {d.route}
+                                </div>
+                                <div className="text-[9px] text-slate-500 truncate">
+                                  🚛 {d.vehicle}
+                                </div>
+                              </div>
+                              {isCurrent && <Check className="w-3.5 h-3.5 text-amber-300 shrink-0" />}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
-                </button>
+                </div>
+              )}
 
-                {/* Dropdown Flyout Menu */}
-                {driverMenuOpen && (
-                  <div className={`
-                    absolute z-50 bg-[#1B1D21] border border-white/15 rounded-2xl p-2 shadow-2xl backdrop-blur-xl
-                    ${isCollapsed ? 'left-full bottom-0 ml-2 w-72' : 'left-0 bottom-full mb-2 w-72'}
-                  `}>
-                    <div className="px-2.5 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between border-b border-white/10 mb-1">
-                      <span>Select Kerala Driver</span>
-                      <span className="text-amber-400 font-mono">13 Drivers</span>
+              {/* MERCHANT MODE ONLY: Switch Between Different Merchants */}
+              {isMerchant && (
+                <div className="relative mt-1" ref={merchantMenuRef}>
+                  <button
+                    onClick={() => setMerchantMenuOpen((prev) => !prev)}
+                    disabled={isSwitching}
+                    title={isCollapsed ? 'Switch Merchant (Kerala Hubs)' : undefined}
+                    className={`
+                      w-full flex items-center rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 transition group
+                      ${isCollapsed ? 'justify-center p-3' : 'justify-between px-3.5 py-2'}
+                      ${merchantMenuOpen ? 'bg-white/10 text-white' : ''}
+                    `}
+                  >
+                    <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'}`}>
+                      <Store className="w-4 h-4 text-emerald-400 shrink-0 group-hover:scale-110 transition-transform" />
+                      {!isCollapsed && <span className="truncate">Switch Merchant</span>}
                     </div>
+                    {!isCollapsed && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-400/20 text-emerald-300 font-semibold font-mono">
+                          Hubs
+                        </span>
+                        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${merchantMenuOpen ? 'rotate-180' : ''}`} />
+                      </div>
+                    )}
+                  </button>
 
-                    <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
-                      {KERALA_DEMO_DRIVERS.map((d) => {
-                        const isCurrent = user?.email === d.email;
+                  {/* Dropdown Flyout Menu (Positioned ABOVE the button) */}
+                  {merchantMenuOpen && (
+                    <div
+                      style={isCollapsed ? { bottom: '0px' } : { bottom: 'calc(100% + 8px)' }}
+                      className={`
+                        absolute z-50 bg-[#1B1D21] border border-white/15 rounded-2xl p-2 shadow-2xl backdrop-blur-xl w-72
+                        ${isCollapsed ? 'left-full ml-2' : 'left-0'}
+                      `}
+                    >
+                      <div className="px-2.5 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between border-b border-white/10 mb-1">
+                        <span>Select Kerala Merchant</span>
+                        <span className="text-emerald-400 font-mono">6 Merchants</span>
+                      </div>
 
-                        return (
-                          <button
-                            key={d.email}
-                            onClick={() => handleSelectDriver(d.email)}
-                            className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left text-xs transition ${
-                              isCurrent
-                                ? 'bg-forest-700 text-white font-bold shadow-xs'
-                                : 'text-slate-300 hover:bg-white/10 hover:text-white'
-                            }`}
-                          >
-                            <div className="min-w-0 pr-2">
-                              <div className="flex items-center gap-1.5">
-                                <span className="truncate font-semibold">{d.name}</span>
-                                {isCurrent && (
-                                  <span className="text-[9px] px-1 rounded bg-amber-400 text-slate-950 font-bold">Active</span>
-                                )}
+                      <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
+                        {KERALA_DEMO_MERCHANTS.map((m) => {
+                          const isCurrent = user?.email === m.email;
+
+                          return (
+                            <button
+                              key={m.email}
+                              onClick={() => handleSelectMerchant(m.email)}
+                              className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left text-xs transition ${
+                                isCurrent
+                                  ? 'bg-forest-700 text-white font-bold shadow-xs'
+                                  : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                              }`}
+                            >
+                              <div className="min-w-0 pr-2">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="truncate font-semibold">{m.name}</span>
+                                  {isCurrent && (
+                                    <span className="text-[9px] px-1 rounded bg-emerald-400 text-slate-950 font-bold">Active</span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-amber-300 truncate mt-0.5">
+                                  🏢 {m.business}
+                                </div>
+                                <div className="text-[9px] text-slate-400 truncate">
+                                  📍 {m.location}
+                                </div>
                               </div>
-                              <div className="text-[10px] text-slate-400 truncate mt-0.5">
-                                📍 {d.route}
-                              </div>
-                              <div className="text-[9px] text-slate-500 truncate">
-                                🚛 {d.vehicle}
-                              </div>
-                            </div>
-                            {isCurrent && <Check className="w-3.5 h-3.5 text-amber-300 shrink-0" />}
-                          </button>
-                        );
-                      })}
+                              {isCurrent && <Check className="w-3.5 h-3.5 text-emerald-300 shrink-0" />}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
             </div>
           </nav>
         </div>

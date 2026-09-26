@@ -26,7 +26,7 @@ initDB();
 
 // Middlewares
 app.use(cors({
-  origin: [CORS_ORIGIN, 'http://localhost:3000', 'http://127.0.0.1:5173'],
+  origin: true,
   credentials: true
 }));
 app.use(express.json());
@@ -34,7 +34,7 @@ app.use(express.json());
 // Socket.IO setup
 const io = new Server(server, {
   cors: {
-    origin: [CORS_ORIGIN, 'http://localhost:3000', 'http://127.0.0.1:5173'],
+    origin: '*',
     methods: ['GET', 'POST']
   }
 });
@@ -59,7 +59,7 @@ app.use((req, res) => {
 });
 
 // Start HTTP + WebSocket Server
-server.listen(PORT, () => {
-  console.log(`🚀 YOKI API Server running at http://localhost:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 YOKI API Server running on port ${PORT}`);
   console.log(`📡 Socket.IO listening for real-time chat`);
 });

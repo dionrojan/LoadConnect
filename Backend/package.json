@@ -9,6 +9,9 @@
     "dev": "nodemon server.js",
     "cli": "node cli.js"
   },
+  "engines": {
+    "node": "20.x"
+  },
   "dependencies": {
     "better-sqlite3": "^11.8.1",
     "bcryptjs": "^3.0.2",

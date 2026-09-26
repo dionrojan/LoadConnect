@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   Truck,
@@ -14,15 +14,35 @@ import {
   ChevronLeft,
   ChevronRight,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  Users,
+  ChevronDown,
+  Check
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+
+// List of available drivers with active routes for 1-click switching
+const KERALA_DEMO_DRIVERS = [
+  { name: 'Sasi Kumar', email: 'driver.sasi@kerala.test', route: 'Kottayam ➔ Kumily', vehicle: 'Tata 407 (14ft)' },
+  { name: 'Jomon Joseph', email: 'driver.jomon@kerala.test', route: 'Kochi ➔ Kattappana', vehicle: 'Ashok Leyland Dost' },
+  { name: 'Rajesh Pillai', email: 'driver.rajesh@kerala.test', route: 'Kochi ➔ Kollam', vehicle: 'BharatBenz 1617' },
+  { name: 'Biju Varghese', email: 'driver.biju@kerala.test', route: 'Kochi ➔ Palakkad', vehicle: 'Tata 1109 Container' },
+  { name: 'Shibu Mathew', email: 'driver.shibu@kerala.test', route: 'Kochi ➔ Thiruvananthapuram', vehicle: 'Eicher Pro 3019' },
+  { name: 'Dileep Nair', email: 'driver.dileep@kerala.test', route: 'Kochi ➔ Kozhikode', vehicle: 'Mahindra Bolero Maxi' },
+  { name: 'Vinod Kurian', email: 'driver.vinod@kerala.test', route: 'Kochi ➔ Munnar', vehicle: 'Tata 709 Reefer' },
+  { name: 'Harikrishnan R', email: 'driver.hari@kerala.test', route: 'Kottayam ➔ Thiruvananthapuram', vehicle: 'Eicher Pro 2049' },
+  { name: 'Joy Sebastian', email: 'driver.joy@kerala.test', route: 'Kozhikode ➔ Kannur', vehicle: 'Ashok Leyland Partner' },
+  { name: 'Anoop Chandran', email: 'driver.anoop@kerala.test', route: 'Palakkad ➔ Coimbatore', vehicle: 'BharatBenz 2823' },
+  { name: 'Sudheer Babu', email: 'driver.sudheer@kerala.test', route: 'Kottayam ➔ Kochi', vehicle: 'Tata Ace Gold' },
+  { name: 'Suresh Menon', email: 'driver.suresh@kerala.test', route: 'Kanjirappally ➔ Kottayam', vehicle: 'Tata 407 Pickup' },
+  { name: 'Dave "Longhaul" Miller', email: 'demo_driver@yoki.test', route: 'Dallas ➔ Chicago', vehicle: '53ft Semi Trailer' },
+];
 
 export default function AppLayout({
   children,
   badgeRequests = 0,
 }) {
-  const { user, logout, isDriver, isMerchant, switchDemo } = useAuth();
+  const { user, logout, isDriver, isMerchant, switchDemo, login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -41,6 +61,20 @@ export default function AppLayout({
     });
   };
 
+  const [driverMenuOpen, setDriverMenuOpen] = useState(false);
+  const driverMenuRef = useRef(null);
+
+  // Close driver menu on click outside
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (driverMenuRef.current && !driverMenuRef.current.contains(event.target)) {
+        setDriverMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const handleRoleSwitch = async () => {
     setIsSwitching(true);
     try {
@@ -49,6 +83,20 @@ export default function AppLayout({
       navigate(nextRole === 'driver' ? '/driver/trips' : '/merchant/search');
     } catch (err) {
       console.error('Demo switch failed:', err);
+    } finally {
+      setIsSwitching(false);
+    }
+  };
+
+  const handleSelectDriver = async (email) => {
+    setIsSwitching(true);
+    try {
+      await login(email, 'password123');
+      navigate('/driver/trips');
+      setDriverMenuOpen(false);
+      setMobileMenuOpen(false);
+    } catch (err) {
+      console.error('Failed to switch driver:', err);
     } finally {
       setIsSwitching(false);
     }
@@ -212,6 +260,80 @@ export default function AppLayout({
                   </span>
                 )}
               </button>
+
+              {/* Switch Between Different Drivers */}
+              <div className="relative mt-1" ref={driverMenuRef}>
+                <button
+                  onClick={() => setDriverMenuOpen((prev) => !prev)}
+                  disabled={isSwitching}
+                  title={isCollapsed ? 'Switch Driver (Kerala Fleet)' : undefined}
+                  className={`
+                    w-full flex items-center rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 transition group
+                    ${isCollapsed ? 'justify-center p-3' : 'justify-between px-3.5 py-2'}
+                    ${driverMenuOpen ? 'bg-white/10 text-white' : ''}
+                  `}
+                >
+                  <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'}`}>
+                    <Users className="w-4 h-4 text-amber-400 shrink-0 group-hover:scale-110 transition-transform" />
+                    {!isCollapsed && <span className="truncate">Switch Driver</span>}
+                  </div>
+                  {!isCollapsed && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-400/20 text-amber-300 font-semibold font-mono">
+                        Fleet
+                      </span>
+                      <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${driverMenuOpen ? 'rotate-180' : ''}`} />
+                    </div>
+                  )}
+                </button>
+
+                {/* Dropdown Flyout Menu */}
+                {driverMenuOpen && (
+                  <div className={`
+                    absolute z-50 bg-[#1B1D21] border border-white/15 rounded-2xl p-2 shadow-2xl backdrop-blur-xl
+                    ${isCollapsed ? 'left-full bottom-0 ml-2 w-72' : 'left-0 bottom-full mb-2 w-72'}
+                  `}>
+                    <div className="px-2.5 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between border-b border-white/10 mb-1">
+                      <span>Select Kerala Driver</span>
+                      <span className="text-amber-400 font-mono">13 Drivers</span>
+                    </div>
+
+                    <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+                      {KERALA_DEMO_DRIVERS.map((d) => {
+                        const isCurrent = user?.email === d.email;
+
+                        return (
+                          <button
+                            key={d.email}
+                            onClick={() => handleSelectDriver(d.email)}
+                            className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left text-xs transition ${
+                              isCurrent
+                                ? 'bg-forest-700 text-white font-bold shadow-xs'
+                                : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                            }`}
+                          >
+                            <div className="min-w-0 pr-2">
+                              <div className="flex items-center gap-1.5">
+                                <span className="truncate font-semibold">{d.name}</span>
+                                {isCurrent && (
+                                  <span className="text-[9px] px-1 rounded bg-amber-400 text-slate-950 font-bold">Active</span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                                📍 {d.route}
+                              </div>
+                              <div className="text-[9px] text-slate-500 truncate">
+                                🚛 {d.vehicle}
+                              </div>
+                            </div>
+                            {isCurrent && <Check className="w-3.5 h-3.5 text-amber-300 shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </nav>
         </div>

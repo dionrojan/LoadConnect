@@ -1,6 +1,5 @@
 import { io } from 'socket.io-client';
-
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+import { getBackendBaseUrl } from './api.js';
 
 class SocketService {
   constructor() {
@@ -19,8 +18,12 @@ class SocketService {
 
     if (!token) return null;
 
-    this.socket = io(SOCKET_URL, {
+    const socketUrl = getBackendBaseUrl();
+    this.socket = io(socketUrl, {
       auth: { token },
+      extraHeaders: {
+        'X-Tunnel-Skip-Anti-Phishing-Page': 'true',
+      },
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,

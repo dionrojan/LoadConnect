@@ -1,9 +1,37 @@
-// Centralized API Client for YOKI (Load_connect)
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// Dynamic resolver supporting Localhost, VS Code Dev Tunnels, LAN IP, and Cloud (Render)
+export function getBackendBaseUrl() {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+    return envUrl.replace(/\/api\/?$/, '');
+  }
+
+  if (typeof window !== 'undefined' && window.location) {
+    const { hostname, protocol, origin } = window.location;
+
+    // 1. VS Code Dev Tunnels (auto-map port 5173 -> port 5000)
+    if (hostname.includes('devtunnels.ms')) {
+      return origin.replace('-5173.', '-5000.').replace(':5173', ':5000');
+    }
+
+    // 2. Local Wi-Fi / LAN IP (e.g. 10.29.136.112)
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      return `${protocol}//${hostname}:5000`;
+    }
+  }
+
+  // 3. Localhost
+  return 'http://localhost:5000';
+}
+
+export function getApiUrl() {
+  return `${getBackendBaseUrl()}/api`;
+}
 
 class ApiClient {
-  constructor(baseUrl) {
-    this.baseUrl = baseUrl;
+  constructor() {}
+
+  getBaseUrl() {
+    return getApiUrl();
   }
 
   getToken() {
@@ -19,11 +47,12 @@ class ApiClient {
   }
 
   async request(path, options = {}) {
-    const url = `${this.baseUrl}${path}`;
+    const url = `${this.getBaseUrl()}${path}`;
     const token = this.getToken();
 
     const headers = {
       'Content-Type': 'application/json',
+      'X-Tunnel-Skip-Anti-Phishing-Page': 'true',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers || {})
     };
@@ -62,7 +91,7 @@ class ApiClient {
   }
 }
 
-export const client = new ApiClient(API_URL);
+export const client = new ApiClient();
 
 // --- Auth Endpoints ---
 export const authAPI = {

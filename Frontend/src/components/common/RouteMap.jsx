@@ -45,12 +45,12 @@ export default function RouteMap({
         minZoom: 3,
       });
 
-      // CartoDB Voyager Tiles (Beautiful warm palette matching Reference 2)
+      // OpenStreetMap Tiles (Fast, 100% reliable, never blocked by adblockers/privacy shields)
       const tileLayer = L.tileLayer(
-        'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+        'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
         {
           maxZoom: 19,
-          subdomains: 'abcd',
+          subdomains: ['a', 'b', 'c'],
         }
       ).addTo(map);
 
@@ -79,9 +79,21 @@ export default function RouteMap({
       ).addTo(mapInstanceRef.current);
     } else {
       tileLayerRef.current = L.tileLayer(
-        'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-        { maxZoom: 19, subdomains: 'abcd' }
+        'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        { maxZoom: 19, subdomains: ['a', 'b', 'c'] }
       ).addTo(mapInstanceRef.current);
+    }
+
+    // Immediately restyle route polylines without re-fetching from API
+    if (routeLayersRef.current.length >= 2) {
+      const outerGlow = routeLayersRef.current[0];
+      const innerRoute = routeLayersRef.current[1];
+      if (outerGlow?.setStyle) {
+        outerGlow.setStyle({ color: mapMode === 'satellite' ? '#0ea5e9' : '#1D4ED8' });
+      }
+      if (innerRoute?.setStyle) {
+        innerRoute.setStyle({ color: mapMode === 'satellite' ? '#38bdf8' : '#2563EB' });
+      }
     }
   }, [mapMode]);
 
@@ -220,7 +232,7 @@ export default function RouteMap({
     return () => {
       isCancelled = true;
     };
-  }, [origin, destination, status, progress, mapMode]);
+  }, [origin, destination, status, progress]);
 
   // Zoom controls
   const handleZoomIn = () => mapInstanceRef.current?.zoomIn();

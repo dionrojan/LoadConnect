@@ -7,7 +7,7 @@ const router = express.Router();
 // POST /api/bookings - Merchant requests space on a trip
 router.post('/', authenticateToken, requireRole('merchant'), (req, res) => {
   try {
-    const { trip_id, space_requested } = req.body;
+    const { trip_id, space_requested, pickup_address } = req.body;
 
     if (!trip_id || space_requested === undefined) {
       return res.status(400).json({ error: 'trip_id and space_requested are required' });
@@ -45,16 +45,21 @@ router.post('/', authenticateToken, requireRole('merchant'), (req, res) => {
       });
     }
 
+    // Default to merchant's profile business_address if not custom specified
+    const merchantUser = db.prepare('SELECT business_address FROM users WHERE id = ?').get(req.user.id);
+    const resolvedPickup = (pickup_address && pickup_address.trim()) || merchantUser?.business_address || null;
+
     const stmt = db.prepare(`
-      INSERT INTO bookings (trip_id, merchant_id, space_requested, status)
-      VALUES (?, ?, ?, 'requested')
+      INSERT INTO bookings (trip_id, merchant_id, space_requested, pickup_address, status)
+      VALUES (?, ?, ?, ?, 'requested')
     `);
 
-    const result = stmt.run(trip_id, req.user.id, spaceNum);
+    const result = stmt.run(trip_id, req.user.id, spaceNum, resolvedPickup);
 
     const booking = db.prepare(`
       SELECT 
         b.*,
+        COALESCE(b.pickup_address, u.business_address) as pickup_location,
         t.origin, t.destination, t.departure_date, t.price_per_unit, t.driver_id,
         u.name as driver_name, u.phone as driver_phone, u.vehicle_type
       FROM bookings b
@@ -85,7 +90,9 @@ router.get('/', authenticateToken, (req, res) => {
         SELECT 
           b.*,
           t.origin, t.destination, t.departure_date, t.price_per_unit, t.available_space,
-          m.name as merchant_name, m.phone as merchant_phone, m.business_name, m.avg_rating as merchant_rating
+          m.name as merchant_name, m.phone as merchant_phone, m.business_name, m.business_address,
+          COALESCE(b.pickup_address, m.business_address) as pickup_location,
+          m.avg_rating as merchant_rating
         FROM bookings b
         JOIN trips t ON b.trip_id = t.id
         JOIN users m ON b.merchant_id = m.id
@@ -97,10 +104,13 @@ router.get('/', authenticateToken, (req, res) => {
         SELECT 
           b.*,
           t.origin, t.destination, t.departure_date, t.price_per_unit,
-          d.name as driver_name, d.phone as driver_phone, d.vehicle_type, d.avg_rating as driver_rating
+          d.name as driver_name, d.phone as driver_phone, d.vehicle_type, d.avg_rating as driver_rating,
+          m.name as merchant_name, m.business_name, m.business_address,
+          COALESCE(b.pickup_address, m.business_address) as pickup_location
         FROM bookings b
         JOIN trips t ON b.trip_id = t.id
         JOIN users d ON t.driver_id = d.id
+        JOIN users m ON b.merchant_id = m.id
         WHERE b.merchant_id = ?
       `;
       params.push(req.user.id);

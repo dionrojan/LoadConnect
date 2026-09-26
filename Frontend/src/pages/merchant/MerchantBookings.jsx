@@ -318,6 +318,13 @@ export default function MerchantBookings() {
                     <span>Driver Direct Phone: <strong className="text-slate-800">{selectedBooking.driver_phone}</strong></span>
                   </div>
                 )}
+
+                {(selectedBooking.pickup_location || selectedBooking.business_address || user?.business_address) && (
+                  <div className="pt-2 border-t border-slate-200/60 flex items-center gap-1.5 text-xs text-amber-900">
+                    <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>Pickup Location: <strong className="text-slate-800">{selectedBooking.pickup_location || selectedBooking.business_address || user?.business_address}</strong></span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -342,6 +349,13 @@ export default function MerchantBookings() {
                       ? 25
                       : 5
                   }
+                  merchants={[{
+                    name: selectedBooking.merchant_name || user?.name || 'Your Location',
+                    business_name: selectedBooking.business_name || user?.business_name || 'My Cargo Hub',
+                    address: selectedBooking.pickup_location || selectedBooking.business_address || selectedBooking.pickup_address || user?.business_address,
+                    space_requested: selectedBooking.space_requested,
+                    status: selectedBooking.status
+                  }]}
                 />
               </div>
             </div>

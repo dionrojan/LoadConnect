@@ -509,6 +509,12 @@ export default function DriverDashboard({ onOpenPostModal }) {
                                   {booking.merchant_phone}
                                 </span>
                               )}
+                              {(booking.pickup_location || booking.business_address) && (
+                                <span className="text-[10px] text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 font-semibold flex items-center gap-1">
+                                  <MapPin className="w-2.5 h-2.5 text-amber-600" />
+                                  <span>Pickup: {booking.pickup_location || booking.business_address}</span>
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -588,6 +594,7 @@ export default function DriverDashboard({ onOpenPostModal }) {
                   vehicleType={selectedTrip.vehicle_type || '53ft Semi Trailer'}
                   status={selectedTrip.bookings?.some((b) => b.status === 'picked_up') ? 'picked_up' : 'requested'}
                   progress={selectedTrip.status === 'completed' ? 100 : 55}
+                  merchants={selectedTrip.bookings || []}
                 />
               </div>
             </div>

@@ -156,7 +156,9 @@ router.get('/:id', authenticateToken, (req, res) => {
     // If requester is the driver, also attach bookings on this trip
     if (trip.driver_id === req.user.id) {
       const bookings = db.prepare(`
-        SELECT b.*, u.name as merchant_name, u.phone as merchant_phone, u.business_name, u.avg_rating as merchant_rating
+        SELECT b.*, u.name as merchant_name, u.phone as merchant_phone, u.business_name, u.business_address,
+               COALESCE(b.pickup_address, u.business_address) as pickup_location,
+               u.avg_rating as merchant_rating
         FROM bookings b
         JOIN users u ON b.merchant_id = u.id
         WHERE b.trip_id = ?

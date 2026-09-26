@@ -10,7 +10,8 @@ import {
   RotateCcw,
   Sparkles,
   Layers,
-  Loader2
+  Loader2,
+  Store
 } from 'lucide-react';
 import { geocode, getRoute } from '../../services/routing';
 
@@ -48,6 +49,8 @@ export default function RouteMap({
   status = 'picked_up', // requested, accepted, picked_up, delivered
   progress = 55, // 0 - 100%
   vehicleType = '53ft Semi Trailer',
+  merchants = [],
+  merchantLocation = null,
   notes = '',
   className = ''
 }) {
@@ -59,6 +62,7 @@ export default function RouteMap({
   const [mapMode, setMapMode] = useState('map'); // 'map' | 'satellite'
   const [loading, setLoading] = useState(true);
   const [routeInfo, setRouteInfo] = useState(null);
+  const [activeMerchants, setActiveMerchants] = useState([]);
   const [nearbyMerchantInfo, setNearbyMerchantInfo] = useState(null);
 
   // Initialize Leaflet map instance once
@@ -113,21 +117,9 @@ export default function RouteMap({
         { maxZoom: 19, subdomains: ['a', 'b', 'c'] }
       ).addTo(mapInstanceRef.current);
     }
-
-    // Immediately restyle route polylines without re-fetching from API
-    if (routeLayersRef.current.length >= 2) {
-      const outerGlow = routeLayersRef.current[0];
-      const innerRoute = routeLayersRef.current[1];
-      if (outerGlow?.setStyle) {
-        outerGlow.setStyle({ color: mapMode === 'satellite' ? '#0ea5e9' : '#1D4ED8' });
-      }
-      if (innerRoute?.setStyle) {
-        innerRoute.setStyle({ color: mapMode === 'satellite' ? '#38bdf8' : '#2563EB' });
-      }
-    }
   }, [mapMode]);
 
-  // Fetch real road coordinates and draw turn-by-turn route
+  // Fetch real road coordinates and draw turn-by-turn route + merchant markers
   useEffect(() => {
     let isCancelled = false;
 
@@ -136,10 +128,85 @@ export default function RouteMap({
       setLoading(true);
 
       try {
-        // 1. Geocode origin and destination place names
-        const [startCoords, endCoords] = await Promise.all([
+        // Normalize merchant locations
+        const merchantItems = [];
+        if (Array.isArray(merchants)) {
+          merchants.forEach((m) => {
+            if (!m) return;
+            if (typeof m === 'string' && m.trim()) {
+              merchantItems.push({ address: m.trim(), name: 'Merchant Hub' });
+            } else if (typeof m === 'object') {
+              const addr = m.pickup_location || m.business_address || m.pickup_address || m.address || m.location;
+              if (addr && typeof addr === 'string' && addr.trim()) {
+                merchantItems.push({
+                  ...m,
+                  address: addr.trim(),
+                  name: m.name || m.merchant_name || 'Merchant',
+                  business_name: m.business_name || '',
+                });
+              }
+            }
+          });
+        }
+        if (merchantLocation) {
+          if (typeof merchantLocation === 'string' && merchantLocation.trim()) {
+            merchantItems.push({ address: merchantLocation.trim(), name: 'Merchant Hub' });
+          } else if (typeof merchantLocation === 'object') {
+            const addr = merchantLocation.pickup_location || merchantLocation.business_address || merchantLocation.pickup_address || merchantLocation.address || merchantLocation.location;
+            if (addr && typeof addr === 'string' && addr.trim()) {
+              merchantItems.push({
+                ...merchantLocation,
+                address: addr.trim(),
+                name: merchantLocation.name || merchantLocation.merchant_name || 'Merchant',
+                business_name: merchantLocation.business_name || '',
+              });
+            }
+          }
+        }
+
+        // Check for nearby corridor merchant if no explicit bookings
+        let foundNearby = null;
+        if (merchantItems.length === 0) {
+          const searchText = `${origin} ${destination} ${notes}`.toLowerCase();
+          for (const m of KERALA_MERCHANTS) {
+            if (m.matchKeywords.some((k) => searchText.includes(k))) {
+              const isOrigin = origin.toLowerCase().includes(m.matchKeywords[0]);
+              const isDest = destination.toLowerCase().includes(m.matchKeywords[0]);
+              if (!isOrigin && !isDest) {
+                foundNearby = m;
+                merchantItems.push({
+                  address: m.location,
+                  name: m.name,
+                  business_name: m.name,
+                  isNearbyMatch: true,
+                });
+                break;
+              }
+            }
+          }
+        }
+        setNearbyMerchantInfo(foundNearby);
+
+        // 1. Geocode origin, destination, and merchants
+        const merchantGeocodePromises = merchantItems.map(async (m) => {
+          try {
+            if (m.coords) {
+              return { ...m, coords: [m.coords[1], m.coords[0]] };
+            }
+            const coords = await geocode(m.address);
+            if (coords && Array.isArray(coords)) {
+              return { ...m, coords: [coords[1], coords[0]] }; // [lat, lng] for Leaflet
+            }
+          } catch (err) {
+            console.warn('Geocoding error for merchant:', m.address, err);
+          }
+          return null;
+        });
+
+        const [startCoords, endCoords, ...geocodedMerchants] = await Promise.all([
           geocode(origin),
           geocode(destination),
+          ...merchantGeocodePromises,
         ]);
 
         if (isCancelled || !startCoords || !endCoords) {
@@ -147,7 +214,10 @@ export default function RouteMap({
           return;
         }
 
-        // 2. Fetch real turn-by-turn highway directions from OpenRouteService
+        const validMerchants = geocodedMerchants.filter(Boolean);
+        setActiveMerchants(validMerchants);
+
+        // 2. Fetch real turn-by-turn highway directions from OpenRouteService / OSRM
         const result = await getRoute(startCoords, endCoords);
 
         if (isCancelled || !result || !result.coordinates?.length) {
@@ -218,7 +288,84 @@ export default function RouteMap({
         const destMarker = L.marker(destLatLng, { icon: destIcon }).addTo(map);
         routeLayersRef.current.push(destMarker);
 
-        // 6. Live Truck Marker positioned along route
+        // 6. Custom Merchant Location Markers with stylish Amber Badge and Popup
+        validMerchants.forEach((m, idx) => {
+          const displayName = m.business_name || m.name || `Merchant #${idx + 1}`;
+          const isAccepted = m.status === 'accepted';
+          const isPickedUp = m.status === 'picked_up';
+          const isDelivered = m.status === 'delivered';
+
+          const merchantIcon = L.divIcon({
+            className: 'custom-merchant-marker',
+            html: `
+              <div style="display:flex; flex-direction:column; align-items:center; transform: translate(-50%, -100%); cursor:pointer;">
+                <div style="background:#B45309; color:white; padding:4px 9px; border-radius:12px; font-size:11px; font-weight:bold; white-space:nowrap; box-shadow:0 4px 14px rgba(180,83,9,0.45); border:2px solid #FEF3C7; display:flex; align-items:center; gap:5px; transition:transform 0.15s ease;">
+                  <span style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; background:#FDE68A; color:#78350F; border-radius:50%; font-size:10px;">🏪</span>
+                  <span>${displayName}</span>
+                  ${m.space_requested ? `<span style="background:rgba(255,255,255,0.25); font-size:9px; padding:1px 5px; border-radius:6px;">${m.space_requested}p</span>` : ''}
+                </div>
+                <div style="width:12px; height:12px; background:#D97706; border:2.5px solid white; border-radius:50%; margin-top:-3px; box-shadow:0 2px 6px rgba(0,0,0,0.35);"></div>
+              </div>
+            `,
+            iconSize: [0, 0],
+          });
+
+          const merchantMarker = L.marker(m.coords, { icon: merchantIcon }).addTo(map);
+
+          const popupHtml = `
+            <div style="font-family:system-ui,-apple-system,sans-serif; min-width:200px; padding:4px;">
+              <div style="display:inline-flex; align-items:center; gap:4px; background:#FEF3C7; color:#92400E; padding:2px 8px; border-radius:6px; font-size:10px; font-weight:bold; text-transform:uppercase; margin-bottom:5px;">
+                <span>🏪</span>
+                <span>${m.isNearbyMatch ? 'Corridor Merchant Hub' : 'Merchant Cargo Hub'}</span>
+              </div>
+              <div style="font-weight:800; font-size:13px; color:#0f172a; line-height:1.2;">
+                ${displayName}
+              </div>
+              ${m.business_name && m.name && m.business_name !== m.name ? `<div style="font-size:11px; color:#64748b; margin-top:2px;">Contact: <strong>${m.name}</strong></div>` : ''}
+              <div style="font-size:11px; color:#475569; margin-top:5px; display:flex; align-items:flex-start; gap:4px; line-height:1.3;">
+                <span style="color:#d97706;">📍</span>
+                <span>${m.address}</span>
+              </div>
+              ${m.space_requested ? `
+                <div style="margin-top:6px; padding-top:6px; border-top:1px solid #e2e8f0; font-size:11px; color:#1e293b; display:flex; justify-content:space-between; align-items:center;">
+                  <span style="color:#64748b;">Cargo Requested:</span>
+                  <strong style="color:#047857; font-weight:700;">${m.space_requested} pallets</strong>
+                </div>
+              ` : ''}
+              ${m.status ? `
+                <div style="margin-top:5px; font-size:10px; font-weight:700; color:${isDelivered ? '#7e22ce' : isPickedUp ? '#2563eb' : isAccepted ? '#047857' : '#d97706'}; text-transform:uppercase;">
+                  Status: ${m.status}
+                </div>
+              ` : ''}
+            </div>
+          `;
+          merchantMarker.bindPopup(popupHtml);
+          routeLayersRef.current.push(merchantMarker);
+
+          // Dashed waypoint connector from merchant location to the closest route highway point
+          if (result.coordinates && result.coordinates.length > 0) {
+            let nearestPt = result.coordinates[0];
+            let minD = Infinity;
+            for (const pt of result.coordinates) {
+              const d = (pt[0] - m.coords[0]) ** 2 + (pt[1] - m.coords[1]) ** 2;
+              if (d < minD) {
+                minD = d;
+                nearestPt = pt;
+              }
+            }
+            if (minD > 0.0001) {
+              const connector = L.polyline([nearestPt, m.coords], {
+                color: '#D97706',
+                weight: 2.5,
+                dashArray: '4, 6',
+                opacity: 0.85,
+              }).addTo(map);
+              routeLayersRef.current.push(connector);
+            }
+          }
+        });
+
+        // 7. Live Truck Marker positioned along route
         if (status !== 'requested') {
           const progressIndex = Math.min(
             result.coordinates.length - 1,
@@ -242,45 +389,11 @@ export default function RouteMap({
           routeLayersRef.current.push(truckMarker);
         }
 
-        // 7. Check for nearby registered merchant along this corridor
-        let foundMerchant = null;
-        const searchText = `${origin} ${destination} ${notes}`.toLowerCase();
-        for (const m of KERALA_MERCHANTS) {
-          if (m.matchKeywords.some((k) => searchText.includes(k))) {
-            const isOrigin = origin.toLowerCase().includes(m.matchKeywords[0]);
-            const isDest = destination.toLowerCase().includes(m.matchKeywords[0]);
-            if (!isOrigin && !isDest) {
-              foundMerchant = m;
-              break;
-            }
-          }
-        }
-
-        if (foundMerchant) {
-          setNearbyMerchantInfo(foundMerchant);
-          const mLatLng = [foundMerchant.coords[1], foundMerchant.coords[0]];
-          const mIcon = L.divIcon({
-            className: 'custom-map-marker',
-            html: `
-              <div style="display:flex; flex-direction:column; align-items:center; transform: translate(-50%, -100%);">
-                <div style="background:#D97706; color:white; padding:4px 8px; border-radius:12px; font-size:10px; font-weight:800; white-space:nowrap; box-shadow:0 4px 14px rgba(217,119,6,0.5); border:1.5px solid white; display:flex; align-items:center; gap:4px;">
-                  <span>🏪</span>
-                  <span>Merchant: ${foundMerchant.name} (${foundMerchant.location.split(',')[0]})</span>
-                </div>
-                <div style="width:10px; height:10px; background:#D97706; border:2px solid white; border-radius:50%; margin-top:-2px;"></div>
-              </div>
-            `,
-            iconSize: [0, 0],
-          });
-          const mMarker = L.marker(mLatLng, { icon: mIcon }).addTo(map);
-          routeLayersRef.current.push(mMarker);
-        } else {
-          setNearbyMerchantInfo(null);
-        }
-
-        // 8. AUTOMATIC PERFECT ZOOM IN (Fits the entire road route with comfortable margins)
-        map.fitBounds(innerRoute.getBounds(), {
-          padding: [50, 50],
+        // 8. AUTOMATIC PERFECT ZOOM IN (Fits route AND all merchant locations)
+        const allCoords = [...result.coordinates, ...validMerchants.map((m) => m.coords)];
+        const fitBounds = L.latLngBounds(allCoords);
+        map.fitBounds(fitBounds, {
+          padding: [55, 55],
           maxZoom: 14,
           animate: true,
           duration: 0.8,
@@ -298,16 +411,28 @@ export default function RouteMap({
     return () => {
       isCancelled = true;
     };
-  }, [origin, destination, status, progress, notes]);
+  }, [
+    origin,
+    destination,
+    status,
+    progress,
+    notes,
+    mapMode,
+    JSON.stringify(merchants),
+    JSON.stringify(merchantLocation)
+  ]);
 
   // Zoom controls
   const handleZoomIn = () => mapInstanceRef.current?.zoomIn();
   const handleZoomOut = () => mapInstanceRef.current?.zoomOut();
   const handleRecenter = () => {
-    if (routeLayersRef.current.length > 0 && mapInstanceRef.current) {
-      const polyline = routeLayersRef.current[1] || routeLayersRef.current[0];
-      if (polyline?.getBounds) {
-        mapInstanceRef.current.fitBounds(polyline.getBounds(), { padding: [50, 50] });
+    if (mapInstanceRef.current && routeLayersRef.current.length > 0) {
+      const group = L.featureGroup(
+        routeLayersRef.current.filter((l) => typeof l.getBounds === 'function' || typeof l.getLatLng === 'function')
+      );
+      const bounds = group.getBounds();
+      if (bounds.isValid()) {
+        mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50] });
       }
     }
   };
@@ -322,7 +447,7 @@ export default function RouteMap({
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/60 backdrop-blur-xs">
           <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-white shadow-xl border border-slate-200 text-xs font-bold text-slate-800">
             <Loader2 className="w-4 h-4 animate-spin text-forest-700" />
-            <span>Calculating real highway route...</span>
+            <span>Calculating highway corridor & merchant pins...</span>
           </div>
         </div>
       )}
@@ -351,9 +476,9 @@ export default function RouteMap({
         </button>
       </div>
 
-      {/* Top-Left: Real Highway Distance, ETA, & Merchant Proximity badge */}
-      {routeInfo && (
-        <div className="absolute top-4 left-4 z-10 flex flex-col gap-1.5 max-w-[280px]">
+      {/* Top-Left: Real Highway Distance & ETA badge */}
+      <div className="absolute top-4 left-4 z-10 flex flex-col gap-2 max-w-[280px]">
+        {routeInfo && (
           <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-md">
             <div className="w-7 h-7 rounded-xl bg-forest-700 text-amber-300 flex items-center justify-center font-bold shrink-0">
               <Navigation className="w-4 h-4 rotate-45" />
@@ -362,22 +487,40 @@ export default function RouteMap({
               <p className="text-xs font-extrabold text-slate-900 leading-tight">
                 {routeInfo.distanceKm} • {routeInfo.duration}
               </p>
-              <p className="text-[10px] text-slate-500 font-medium">
-                Verified road route ({routeInfo.source})
+              <p className="text-[10px] text-slate-500 font-medium truncate">
+                Route via {routeInfo.source}
               </p>
             </div>
           </div>
+        )}
 
-          {nearbyMerchantInfo && (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 text-white shadow-md border border-amber-400 text-[11px] font-bold">
-              <span>🏪</span>
-              <span className="truncate">
-                Passes near: <span className="underline">{nearbyMerchantInfo.name}</span> ({nearbyMerchantInfo.location.split(',')[0]})
+        {/* Merchant Location Tag badge */}
+        {activeMerchants.length > 0 && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-white/95 backdrop-blur-md border border-amber-300 shadow-md">
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+            <div className="truncate">
+              <span className="text-[11px] font-bold text-amber-900 flex items-center gap-1">
+                <Store className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span className="truncate">
+                  {activeMerchants.length === 1
+                    ? `${activeMerchants[0].business_name || activeMerchants[0].name}`
+                    : `${activeMerchants.length} Merchant Pickups`}
+                </span>
               </span>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+
+        {/* Nearby Corridor Merchant Hint if matched */}
+        {nearbyMerchantInfo && activeMerchants.length === 0 && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 text-white shadow-md border border-amber-400 text-[11px] font-bold">
+            <span>🏪</span>
+            <span className="truncate">
+              Passes near: <span className="underline">{nearbyMerchantInfo.name}</span> ({nearbyMerchantInfo.location.split(',')[0]})
+            </span>
+          </div>
+        )}
+      </div>
 
       {/* Bottom-Right: Interactive Zoom Controls */}
       <div className="absolute bottom-4 right-4 flex flex-col items-center gap-1.5 z-10">
@@ -400,7 +543,7 @@ export default function RouteMap({
 
         <button
           onClick={handleRecenter}
-          title="Recenter and auto-fit route"
+          title="Recenter and auto-fit route & merchant pins"
           className="p-2.5 rounded-2xl bg-white/95 backdrop-blur-md border border-slate-200 text-slate-700 hover:text-slate-950 shadow-md transition"
         >
           <RotateCcw className="w-3.5 h-3.5" />
@@ -408,19 +551,29 @@ export default function RouteMap({
       </div>
 
       {/* Bottom-Left: Live Freight Status Pill */}
-      <div className="absolute bottom-4 left-4 flex items-center gap-3 px-3.5 py-2 rounded-2xl bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-md z-10">
-        <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
+      <div className="absolute bottom-4 left-4 flex items-center gap-3 px-3.5 py-2 rounded-2xl bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-md z-10 max-w-[calc(100%-80px)] overflow-x-auto">
+        <div className="flex items-center gap-2 text-xs font-bold text-slate-800 shrink-0">
           <Truck className="w-4 h-4 text-forest-700" />
           <span>{vehicleType}</span>
         </div>
-        <span className="w-1 h-1 rounded-full bg-slate-300" />
-        <div className="text-xs font-extrabold text-forest-700">
+        <span className="w-1 h-1 rounded-full bg-slate-300 shrink-0" />
+        <div className="text-xs font-extrabold text-forest-700 shrink-0">
           {status === 'delivered'
             ? '100% Delivered'
             : status === 'picked_up'
             ? `${progress}% In Transit`
             : 'Scheduled Route'}
         </div>
+
+        {activeMerchants.length > 0 && (
+          <>
+            <span className="w-1 h-1 rounded-full bg-slate-300 shrink-0" />
+            <div className="flex items-center gap-1.5 text-xs font-bold text-amber-800 shrink-0">
+              <span className="w-2 h-2 rounded-full bg-amber-500" />
+              <span>Merchant Pickup Mapped</span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

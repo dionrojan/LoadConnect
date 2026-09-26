@@ -42,9 +42,21 @@ export default function TripSearch() {
   // Booking Modal / Request Space Form
   const [isBookModalOpen, setIsBookModalOpen] = useState(false);
   const [spaceRequested, setSpaceRequested] = useState(4);
+  const [pickupAddress, setPickupAddress] = useState('');
   const [submittingBooking, setSubmittingBooking] = useState(false);
   const [bookingError, setBookingError] = useState('');
   const [bookingSuccess, setBookingSuccess] = useState(false);
+
+  const handleOpenBookModal = (trip = selectedTrip) => {
+    if (trip) {
+      setSelectedTrip(trip);
+      setSpaceRequested(Math.min(4, trip.available_space || 4));
+    }
+    setPickupAddress(user?.business_address || '');
+    setBookingError('');
+    setBookingSuccess(false);
+    setIsBookModalOpen(true);
+  };
 
   // Sync state to URL and fetch
   const fetchTrips = async () => {
@@ -116,6 +128,7 @@ export default function TripSearch() {
       await bookingsAPI.createBooking({
         trip_id: selectedTrip.id,
         space_requested: requested,
+        pickup_address: pickupAddress.trim() || undefined,
       });
 
       setBookingSuccess(true);
@@ -285,7 +298,7 @@ export default function TripSearch() {
         {/* Pinned Bottom CTA Button */}
         <div className="p-3 border-t border-slate-200/90 bg-white">
           <button
-            onClick={() => setIsBookModalOpen(true)}
+            onClick={() => handleOpenBookModal(selectedTrip)}
             disabled={!selectedTrip || selectedTrip.available_space <= 0}
             className="w-full py-3 px-4 rounded-2xl bg-[#17181A] hover:bg-black text-white text-xs font-bold shadow-md flex items-center justify-center gap-2 transition disabled:opacity-50"
           >
@@ -313,7 +326,7 @@ export default function TripSearch() {
               </div>
 
               <button
-                onClick={() => setIsBookModalOpen(true)}
+                onClick={() => handleOpenBookModal(selectedTrip)}
                 disabled={selectedTrip.available_space <= 0}
                 className="px-5 py-2 rounded-xl bg-forest-700 hover:bg-forest-800 text-white text-xs font-bold shadow-md transition disabled:opacity-50"
               >
@@ -422,6 +435,12 @@ export default function TripSearch() {
                   notes={selectedTrip.notes}
                   status="requested"
                   progress={15}
+                  merchants={user?.business_address ? [{
+                    name: user.name || 'Your Location',
+                    business_name: user.business_name || 'My Cargo Hub',
+                    address: user.business_address,
+                    status: 'Pickup Hub'
+                  }] : []}
                 />
               </div>
             </div>
@@ -511,6 +530,24 @@ export default function TripSearch() {
                       ⚠️ Cannot book more than the {selectedTrip.available_space} pallets currently available.
                     </p>
                   )}
+                </div>
+
+                {/* Pickup / Warehouse Location Input */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                    <span>Merchant Pickup / Warehouse Location</span>
+                    <span className="text-[10px] text-amber-700 font-medium">Mapped on corridor</span>
+                  </label>
+                  <div className="relative">
+                    <MapPin className="w-4 h-4 text-amber-600 absolute left-3.5 top-3.5" />
+                    <input
+                      type="text"
+                      value={pickupAddress}
+                      onChange={(e) => setPickupAddress(e.target.value)}
+                      placeholder="e.g. 450 Broad St, Houston TX"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white text-xs font-semibold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-forest-600 transition"
+                    />
+                  </div>
                 </div>
 
                 {/* Price summary */}

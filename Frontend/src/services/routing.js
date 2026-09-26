@@ -1,7 +1,7 @@
 // Routing and Geocoding service using OpenRouteService with OSRM & Nominatim fallbacks
 const ORS_KEY = import.meta.env.VITE_ORS_API_KEY || '';
 
-// High-speed local cache for common towns to ensure instant zero-latency rendering
+// High-speed local cache for common freight hubs and demo cities for instant zero-latency rendering
 const KNOWN_PLACES = {
   kanjirappally: { name: 'Kanjirappally, Kerala', coords: [76.78975, 9.55451] },
   kottayam: { name: 'Kottayam, Kerala', coords: [76.52215, 9.59157] },
@@ -39,6 +39,12 @@ const KNOWN_PLACES = {
   'miami, fl': { name: 'Miami, FL', coords: [-80.1918, 25.7617] },
   houston: { name: 'Houston, TX', coords: [-95.3698, 29.7604] },
   'houston, tx': { name: 'Houston, TX', coords: [-95.3698, 29.7604] },
+  austin: { name: 'Austin, TX', coords: [-97.7431, 30.2672] },
+  'austin, tx': { name: 'Austin, TX', coords: [-97.7431, 30.2672] },
+  'san antonio': { name: 'San Antonio, TX', coords: [-98.4936, 29.4241] },
+  memphis: { name: 'Memphis, TN', coords: [-90.0490, 35.1495] },
+  'st. louis': { name: 'St. Louis, MO', coords: [-90.1994, 38.6270] },
+  'little rock': { name: 'Little Rock, AR', coords: [-92.2896, 34.7465] },
   'los angeles': { name: 'Los Angeles, CA', coords: [-118.2437, 34.0522] },
   'los angeles, ca': { name: 'Los Angeles, CA', coords: [-118.2437, 34.0522] },
   phoenix: { name: 'Phoenix, AZ', coords: [-112.0740, 33.4484] },
@@ -52,20 +58,15 @@ export async function geocode(placeName) {
   if (!placeName || typeof placeName !== 'string') return null;
   const clean = placeName.trim().toLowerCase();
 
-  // 1. Check local cache
+  // 1. Direct exact match in local cache for instant rendering
   if (KNOWN_PLACES[clean]) {
     return KNOWN_PLACES[clean].coords;
   }
-  for (const [key, val] of Object.entries(KNOWN_PLACES)) {
-    if (clean.includes(key) || key.includes(clean)) {
-      return val.coords;
-    }
-  }
 
-  // 2. Query OpenRouteService Geocoding
+  // 2. Query OpenRouteService Geocoding (exact address and pinpoint GIS)
   if (ORS_KEY) {
     try {
-      const url = `https://api.openrouteservice.org/geocode/search?api_key=${ORS_KEY}&text=${encodeURIComponent(placeName)}&size=1`;
+      const url = `https://api.openrouteservice.org/geocode/search?api_key=${encodeURIComponent(ORS_KEY)}&text=${encodeURIComponent(placeName)}&size=1`;
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
@@ -78,7 +79,14 @@ export async function geocode(placeName) {
     }
   }
 
-  // 3. Fallback to Nominatim (OpenStreetMap)
+  // 3. Fallback: Partial match in local cache
+  for (const [key, val] of Object.entries(KNOWN_PLACES)) {
+    if (clean.includes(key) || key.includes(clean)) {
+      return val.coords;
+    }
+  }
+
+  // 4. Fallback to Nominatim (OpenStreetMap)
   try {
     const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(placeName)}&format=json&limit=1`;
     const res = await fetch(url, { headers: { 'User-Agent': 'YOKI-Logistics-Platform' } });
@@ -116,22 +124,45 @@ export async function getRoute(start, end) {
 
       if (res.ok) {
         const data = await res.json();
+
+        // ORS GET directions returns a GeoJSON FeatureCollection
+        const feature = data?.features?.[0];
         const route = data?.routes?.[0];
-        if (route) {
+
+        if (feature) {
+          const summary = feature.properties?.summary || feature.properties?.segments?.[0] || {};
+          const distKm = ((summary.distance || 0) / 1000).toFixed(1);
+          const durationMins = Math.round((summary.duration || 0) / 60);
+          const hours = Math.floor(durationMins / 60);
+          const mins = durationMins % 60;
+          const durationFormatted = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+
+          // GeoJSON coordinates are [lng, lat] -> Leaflet expects [lat, lng]
+          const latLngs = feature.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+
+          return {
+            distanceKm: `${distKm} km`,
+            distanceRaw: distKm,
+            duration: durationFormatted,
+            coordinates: latLngs,
+            source: 'OpenRouteService',
+          };
+        } else if (route) {
           const distKm = (route.summary.distance / 1000).toFixed(1);
           const durationMins = Math.round(route.summary.duration / 60);
           const hours = Math.floor(durationMins / 60);
           const mins = durationMins % 60;
           const durationFormatted = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
 
-          // GeoJSON coordinates are [lng, lat] -> Leaflet wants [lat, lng]
-          const latLngs = route.geometry.map(([lng, lat]) => [lat, lng]);
+          const latLngs = Array.isArray(route.geometry)
+            ? route.geometry.map(([lng, lat]) => [lat, lng])
+            : [];
 
           return {
             distanceKm: `${distKm} km`,
             distanceRaw: distKm,
             duration: durationFormatted,
-            coordinates: latLngs, // [ [lat, lng], ... ]
+            coordinates: latLngs,
             source: 'OpenRouteService',
           };
         }

@@ -49,6 +49,7 @@ export function initDB() {
       trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
       merchant_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       space_requested REAL NOT NULL,
+      pickup_address TEXT,
       status TEXT DEFAULT 'requested' CHECK(status IN ('requested', 'accepted', 'declined', 'picked_up', 'delivered')),
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -82,6 +83,13 @@ export function initDB() {
   `;
 
   db.exec(schema);
+
+  try {
+    db.exec('ALTER TABLE bookings ADD COLUMN pickup_address TEXT;');
+  } catch (err) {
+    // Column already exists
+  }
+
   console.log('✅ SQLite database initialized successfully at', dbPath);
 }
 

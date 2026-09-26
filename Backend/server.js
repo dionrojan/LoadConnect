@@ -7,6 +7,7 @@ import cors from 'cors';
 import { Server } from 'socket.io';
 
 import { initDB } from './db/setup.js';
+import { seedKerala } from './db/seed_kerala.js';
 import { setupSocket } from './socket/chat.js';
 
 import authRoutes from './routes/auth.js';
@@ -21,8 +22,9 @@ const server = http.createServer(app);
 const PORT = process.env.PORT || 5000;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173';
 
-// Initialize SQLite database
+// Initialize SQLite database & seed Kerala data
 initDB();
+seedKerala();
 
 // Middlewares
 app.use(cors({
